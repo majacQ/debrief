@@ -10,11 +10,8 @@ class Graph {
     }
 }
 
-var width = 1100,
-    height = 400
-
-$('.svg-container').attr("width", width);
-$('.svg-container').attr("height", height);
+var width = $("#debrief-graph").width(),
+    height = $("#debrief-graph").height()
 
 $('svg').width('100%')
 $('svg').height('100%')
@@ -51,7 +48,9 @@ var imgs = {
     "persistence": "debrief/img/persistence.svg",
     "privilege-escalation": "debrief/img/privesc.svg",
     "initial-access": "debrief/img/access.svg",
-    "command-and-control": "debrief/img/commandcontrol.svg"}
+    "command-and-control": "debrief/img/commandcontrol.svg",
+    "unknown" : "debrief/img/unknown.svg"
+    };
 
 for (var key in imgs) {
     getImage(key, imgs[key])
@@ -86,7 +85,7 @@ function updateReportGraph(operations){
         buildGraph(graphObj, operations)
         graphObj.simulation.alpha(1).restart();
         graphObj.svg.call(d3.zoom().scaleExtent([0.5, 5]).on("zoom", function() {
-            d3.select(graphObj.id + " .container")
+            d3.select(graphObj.id + " .graphContainer")
                 .attr("transform", "translate(" + d3.event.transform.x + "," + d3.event.transform.y + ")scale(" + d3.event.transform.k + ")");
         }));
     });
@@ -124,7 +123,10 @@ function writeGraph(graph, graphObj) {
                         .attr("width", "100%")
                         .attr("height", "100%")
 
-    var arrows = container.append("g")
+    var graphContainer = container.append("g")
+                        .attr("class", "graphContainer")
+
+    var arrows = graphContainer.append("g")
                 .style("stroke", "#aaa")
                 .style("fill", "#aaa")
                 .selectAll("polyline")
@@ -136,7 +138,7 @@ function writeGraph(graph, graphObj) {
                 .attr("stroke-linecap", "round");
 
     container.selectAll('g.nodes').remove();
-    var nodes = container.append("g")
+    var nodes = graphContainer.append("g")
         .attr("class", "nodes")
         .selectAll("g")
         .data(graph.nodes)
@@ -177,14 +179,7 @@ function writeGraph(graph, graphObj) {
     nodes.append("g")
         .attr("class", "icons")
         .html(function(d) {
-            let c;
-            if (d.img.indexOf(" ") == -1 && $("#" + d.img + "-img").length > 0) {
-                c = $("#" + d.img + "-img")[0].cloneNode(true);
-            }
-            else {
-                c = $("#" + d.type + "-img")[0].cloneNode(true);
-            }
-            c = updateIconAttr(c, d.status);
+            let c = updateIconAttr(cloneImgIcon(d), d.status);
             let l = "";
             if (d.type == "link") {
                 l = $("#link-img")[0].cloneNode(true);
@@ -219,16 +214,23 @@ function writeGraph(graph, graphObj) {
 	    .enter()
 	    .append("g")
 
+    let lineHeight = 30;
+    let upperPadding = 60;
+
     entry.append("svg")
         .attr("x", width - 170)
         .attr("y", function(d, i){
-            $("#legend-rect-" + graphObj.type).attr("height", parseInt($("#legend-rect-" + graphObj.type).attr("height")) + 30);
-            return i *  30 + 60;})
+            $("#legend-rect-" + graphObj.type).attr("height", parseInt($("#legend-rect-" + graphObj.type).attr("height")) + lineHeight);
+            let yVal = i * lineHeight + upperPadding;
+            if (yVal > height - 90) {
+                $("#debrief-graph").height(height + lineHeight);
+                height = $("#debrief-graph").height();
+            }
+            return yVal})
         .attr("width", 20)
         .attr("height", 20)
         .html(function(d) {
-            let imgToClone = d.img.indexOf(" ") == -1 ? $("#" + d.img + "-img") : $("#" + d.type + "-img");
-            let clone = imgToClone[0].cloneNode(true);
+            let clone = cloneImgIcon(d);
             this.id = clone.id + "-legend";
             this.setAttribute("viewBox", clone.getAttribute("viewBox"));
             this.setAttribute("preserveAspectRatio", "xMidYMid meet");
@@ -239,7 +241,7 @@ function writeGraph(graph, graphObj) {
 
     entry.append("text")
         .attr("x", width - 135)
-        .attr("y", function(d, i){ return i *  30 + 77;})
+        .attr("y", function(d, i){ return i *  lineHeight + upperPadding + lineHeight/2;})
         .style("fill", "white")
         .style("font-size", 13)
         .style("text-transform", "capitalize")
@@ -379,6 +381,22 @@ function writeGraph(graph, graphObj) {
     }
 }
 
+function cloneImgIcon(d) {
+    let c;
+    try {
+        if (d.img.indexOf(" ") == -1 && $("#" + d.img + "-img").length > 0) {
+            c = $("#" + d.img + "-img")[0].cloneNode(true);
+        }
+        else {
+            c = $("#" + d.type + "-img")[0].cloneNode(true);
+        }
+    }
+    catch {
+        c = $("#unknown-img")[0].cloneNode(true);
+    }
+    return c;
+}
+
 function updateIconAttr(svg, status) {
     $(svg).removeAttr("id");
     $(svg).attr("width", 32);
@@ -416,8 +434,13 @@ function limitFactsDisplayed(operations) {
         $("#fact-limit-msg p").html("More than " + factDisplayLimit + " facts found in the operation(s) selected. For readability, only the first " + factDisplayLimit + " facts of each operation are displayed.");
         $("#fact-limit-msg").show();
         operations.forEach(function(opId) {
-            $("#debrief-fact-svg g.fact[data-op='" + opId + "']").slice(factDisplayLimit).remove();
-            $("#debrief-fact-svg polyline.relationship[data-source='" + opId + "']").slice(factDisplayLimit).remove();
+            let nodesToRemove = $("#debrief-fact-svg g.fact[data-op='" + opId + "']").splice(factDisplayLimit);
+            nodesToRemove.forEach(function(node) {
+                let nodeId = node.id.split("node-")[1];
+                $("#debrief-fact-svg polyline.relationship[data-source='" + nodeId + "']").remove();
+                $("#debrief-fact-svg polyline.relationship[data-target='" + nodeId + "']").remove();
+                node.remove();
+            })
         })
     }
 }
