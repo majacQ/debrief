@@ -13,8 +13,8 @@
         <div class="column section-border" style="flex:20%;text-align:left;padding:15px;">
             <h1 style="font-size:70px;margin-top:-20px;">Debrief</h1>
             <h2 style="margin-top:-50px">Campaign Analytics</h2>
-            <div>
-                <h4>OPERATIONS:</h4>
+            <p>Select from the operations below to view analytics. CTRL/CMD/SHIFT + click to select multiple operations.</p>
+            <div style="text-align: center">
                 <select id="debrief-operation-list" size="5" data-placeholder="No operations to show." multiple style="overflow-y:auto">
                   {% for op in operations %}
                         {%  if op.start|length%}
@@ -23,22 +23,82 @@
                   {% endfor %}
                 </select>
             </div>
-            <div>
-                <h4>GRAPH OPTIONS</h4>
+            <div class="sidebar-cutout sidebar-header debrief-sidebar-header">
+                <h4 style="margin-bottom:0px">GRAPH OPTIONS</h4>
+            </div>
+            <div class="sidebar-cutout debrief-sidebar" style="display: none">
                 <h5>Display Options</h5>
-                <input type="checkbox" id="show-labels" value="labels" checked onclick="toggleLabels(this)">
+                <input type="checkbox" id="show-labels" class="debrief-display-opt" value="labels" checked onclick="toggleLabels(this)">
                 <label for="show-labels">Show labels</label><br>
-                <input type="checkbox" id="show-images" value="images" checked onclick="toggleIcons(this)">
+                <input type="checkbox" id="show-images" class="debrief-display-opt" value="images" checked onclick="toggleIcons(this)">
                 <label for="show-images">Show icons</label>
                 <h5>Data Options</h5>
-                <input type="checkbox" id="show-steps" value="steps" checked onclick="toggleSteps(this)">
-                <label for="show-steps">Show operation steps</label>
+                <input type="checkbox" id="show-steps" class="debrief-display-opt" value="steps" checked onclick="toggleSteps(this)">
+                <label for="show-steps">Show operation steps</label><br>
+                <input type="checkbox" id="show-tactic-icons" class="debrief-display-opt" value="tactic-icons" onclick="toggleTacticIcons(this)">
+                <label for="show-tactic-icons">Show steps as tactics</label>
             </div>
-            <div id="debrief-download">
-                <button id="debrief-download-raw" type="button" class="button-success atomic-button"
-                        style="margin-top:0;">Download JSON</button>
+            <div class="sidebar-cutout sidebar-header debrief-sidebar-header">
+                <h4 style="margin-bottom:0px">REPORT OPTIONS</h4>
+            </div>
+            <div class="sidebar-cutout debrief-sidebar" style="display: none">
+                <h5 style="margin: 0 0 5 0">Manage Report Sections</h5>
+                <div class="debrief-section-ordering" style="margin: 5px 5px 15px 5px;">
+                    <select id="selected-report-section-ordering-list" size="5" style="overflow-y:auto" data-placeholder="No sections to show.">
+                        <!-- Will be populated by javascript -->
+                    </select>
+                    <div class="section-ordering-button-container" style="width: 100%; overflow:hidden;">
+                        <button id="report-section-move-button-up" onclick="moveReportSection('up');displayReportSections();"
+                            class="button-success atomic-button debrief-report-section-move-button" type="button"
+                            style="align-items: center; justify-content: center; display: flex; padding: 8px; width:30%; float:left;">
+                            <div class="debrief-report-section-move-arrow" style="border-left: 1px solid rgba(0,0,0,1);
+                                 border-top: 1px solid rgba(0,0,0,1); transform: translateY(25%) rotate(45deg);"></div>
+                        </button>
+                        <button id="report-section-move-button-down" onclick="moveReportSection('down');displayReportSections();"
+                                class="button-success atomic-button debrief-report-section-move-button" type="button"
+                                style="align-items: center; justify-content: center; display: flex; padding: 8px; width:30%; float:left;">
+                            <div class="debrief-report-section-move-arrow" style="border-right: 1px solid rgba(0,0,0,1);
+                                 border-bottom: 1px solid rgba(0,0,0,1);
+                                 transform: translateY(-25%) rotate(45deg);"></div>
+                        </button>
+                        <button id="report-section-toggle-button" onclick="toggleReportSection();displayReportSections();"
+                                class="button-success atomic-button" type="button"
+                                style="align-items: center; justify-content: center; display: flex; padding: 8px; width:40%; float:right;">
+                            <p style="color: black;">Enable/Disable
+
+
+
+                            </p>
+                        </button>
+                    </div>
+                </div>
+                <hr style="margin: 5 0 5;">
+                <div class="debrief-header-logo-select" style="margin: 5px 5px 15px 5px;">
+                    <h5 style="margin-bottom:5px">Report Header Logo Selection</h5>
+                    <p style="margin-bottom:5px">Select a logo to appear in the top right corner of each page.</p>
+                    <select id="debrief-header-logo-list" size="5" data-placeholder="No logos to show." onchange="showLogoPreview()" style="overflow-y:auto">
+                        <option class="header-logo-option" value="no-logo" selected>Do not use a logo</option>
+                        {% for logo in header_logos %}
+                            <option class="header-logo-option" value="{{ logo }}">{{ logo }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div id="debrief-report-logo-preview"></div>
+                <div class="debrief-logo-upload-wrapper">
+                    <button id="logo-upload-button" type="button" class="button-success atomic-button"
+                            onclick="triggerLogoUploadButton();" style="margin-bottom:0;">
+                        Upload logo file
+                    </button>
+                    <input id="logo-file" name="logo" type="file" value=""
+                           onchange="uploadHeaderLogo();" accept="image/*"/>
+                </div>
+                <hr style="margin: 5 0 10;">
+            </div>
+            <div id="debrief-download" style="text-align: center;">
                 <button id="debrief-download-pdf" type="button" class="button-success atomic-button" style="margin-top:0;"
-                        onclick="downloadPDF()">Download PDF</button>
+                        onclick="downloadPDF()">Download Report PDF</button>
+                <button id="debrief-download-raw" type="button" class="button-success atomic-button"
+                        style="margin-top:0;" onclick="downloadJSON()">Download Operation JSON</button>
             </div>
         </div>
 
@@ -46,9 +106,18 @@
             <div id="debrief-graph" class="row svg-container">
                 <button id="graph-switch-technique" class="graph-switch" value="technique" onclick="switchGraphView(this)">Technique</button>
                 <button id="graph-switch-tactic" class="graph-switch" value="tactic" onclick="switchGraphView(this)">Tactic</button>
+                <button id="graph-switch-attackpath" class="graph-switch" value="attackpath" onclick="switchGraphView(this)">Attack Path</button>
                 <button id="graph-switch-graph" class="graph-switch" disabled value="graph" onclick="switchGraphView(this)">Default</button>
-                <div class="tooltip" id="op-tooltip" style="opacity: 0"></div>
+                <div style="float: left;display: flex;position: absolute;bottom: 20px;left: 430px;">
+                    <div id="graph-media-beginning" class="graph-media-control" style="transform: scaleX(-1);" onclick="visualizeBeginning()">&#x25B6;&#x25B6;|</div>
+                    <div id="graph-media-backward" class="graph-media-control" style="transform: scaleX(-1);" onclick="visualizeStepBack()">&nbsp;&#x25B6;|&nbsp;</div>
+                    <div id="graph-media-play" class="graph-media-control paused" style="width: 20px;" onclick="visualizeTogglePlay()">&#x25B6;</div>
+                    <div id="graph-media-forward" class="graph-media-control" onclick="visualizeStepForward()">&nbsp;&#x25B6;|&nbsp;</div>
+                    <div id="graph-media-end" class="graph-media-control" onclick="visualizeEnd()">&#x25B6;&#x25B6;|</div>
+                </div>
+                <div class="d3-tooltip" id="op-tooltip" style="opacity: 0"></div>
                 <svg id="debrief-graph-svg" class="op-svg debrief-svg"></svg>
+                <svg id="debrief-attackpath-svg" class="op-svg debrief-svg" style="display: none"></svg>
                 <svg id="debrief-tactic-svg" class="op-svg debrief-svg" style="display: none"></svg>
                 <svg id="debrief-technique-svg" class="op-svg debrief-svg" style="display: none"></svg>
             </div>
@@ -62,6 +131,21 @@
                         <th>Planner</th>
                         <th>Objective</th>
                         <th>Time</th>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+
+            <h3>Agents</h3>
+            <div class="row">
+                <table id="report-agents" class="report-table" border=1 frame=void rules=rows>
+                    <thead>
+                        <th>Paw</th>
+                        <th>Host</th>
+                        <th>Platform</th>
+                        <th>Username</th>
+                        <th>Privilege</th>
+                        <th>Executable</th>
                     </thead>
                     <tbody></tbody>
                 </table>
@@ -81,9 +165,25 @@
                     <tbody></tbody>
                 </table>
             </div>
+
+            <h3>Tactics and Techniques</h3>
+            <div class="row">
+                <table id="report-tactics-techniques" class="report-table" border=1 frame=void rules=rows>
+                    <thead>
+                        <th>Tactics</th>
+                        <th>Techniques</th>
+                        <th>Abilities</th>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+
             <h3>Fact Graph</h3>
             <div id="fact-graph" class="row svg-container" style="background-color: black; height: 400px; background-image: none;">
-                <div class="tooltip" id="fact-tooltip" style="opacity: 0"></div>
+                <div id="fact-limit-msg">
+                    <p style="margin: 0;"></p>
+                </div>
+                <div class="d3-tooltip" id="fact-tooltip" style="opacity: 0"></div>
                 <svg id="debrief-fact-svg" class="debrief-svg"></svg>
             </div>
 
@@ -107,3 +207,31 @@
 
 <div id="copy"></div>
 <div id="images" style="display: none"></div>
+
+<script>
+    function statusName(status) {
+        if (status === 0) {
+            return 'success';
+        } else if (status === -2) {
+            return 'discarded';
+        } else if (status === 1) {
+            return 'failure';
+        } else if (status === 124) {
+            return 'timeout';
+        } else if (status === -3) { // && chain.collect) {
+            return 'collected';
+        } else if (status === -4) {
+            return 'untrusted';
+        } else if (status === -5) {
+            return 'visibility';
+        }
+        return 'queued';
+    }
+
+    function checkUploadButton() {
+        validateFormState(($('#logo-file').val()), '#debrief-upload-logo');
+    }
+
+    initSectionOrderingList({{ report_sections|safe }});
+	displayReportSections();
+</script>
