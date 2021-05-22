@@ -2,25 +2,6 @@ var nodesOrderedByTime;
 var visualizeInterval;
 
 $( document ).ready(function() {
-    $('#debrief-download-raw').click(function () {
-        let operations = $('#debrief-operation-list').val();
-        if (operations) {
-            operations.forEach(function (op_id, index) {
-                let postData = op_id ? {
-                    'index': 'operation_report',
-                    'op_id': op_id,
-                    'agent_output': Number(1)
-                } : null;
-                let time = new Date().toISOString().split('.')[0].replaceAll(':', '-');
-                let opName = $("#debrief-operation-list option[value='" + op_id + "']").text();
-                downloadReport('/api/rest', 'debrief_' + opName + '_' + time, postData);
-            })
-        }
-        else {
-            stream('Select at least one operation to generate the JSON report');
-        }
-    });
-
     $('#debrief-operation-list').change(function (e){
         clearReport();
         let operations = $(e.target).val();
@@ -32,6 +13,10 @@ $( document ).ready(function() {
             $("#fact-limit-msg p").html();
             restRequest('POST', {'operations': operations}, displayReport, '/plugin/debrief/report');
         }
+    });
+
+    $(".debrief-sidebar-header").click(function(){
+        $(this).next(".debrief-sidebar").slideToggle("slow");
     });
 
     function clearReport(){
@@ -124,7 +109,6 @@ $( document ).ready(function() {
             );
         })
     }
-
 });
 
 function switchGraphView(btn) {
@@ -135,25 +119,53 @@ function switchGraphView(btn) {
 }
 
 function downloadPDF() {
-    function callback(data) {
-        if (typeof data == 'string') {
-            stream('Select at least one operation to generate a PDF report');
+    stream("Generating PDF report... ");
+	var reportSections = JSON.parse(localStorage.getItem('report-section-order')).map(x => x.split(/-(.+)/)[1]);
+    restRequest(
+    	'POST', {
+    		'operations': $('#debrief-operation-list').val(),
+    		'graphs': getGraphData(),
+    		'report-sections': reportSections,
+    		'header-logo': $('#debrief-header-logo-list').val()
+		},
+ 		downloadReport("pdf"),
+ 		'/plugin/debrief/pdf'
+	);
+}
+
+function downloadJSON() {
+    stream("Generating JSON report... ");
+    restRequest("POST", {"operations": $("#debrief-operation-list").val()}, downloadReport("json"), "/plugin/debrief/json");
+}
+
+function downloadReport(downloadType) {
+    return function(data) {
+        if (typeof data == "string") {
+            stream("Select at least one operation to generate a report");
         }
         else {
-            stream('Downloading PDF report: '+ data['filename'] + '.pdf');
-
-            let file = new Blob([data['pdf_bytes']], { type: 'application/pdf' });
-            let fileURL = URL.createObjectURL(file);
-
-            let downloadAnchorNode = document.createElement('a');
-            downloadAnchorNode.setAttribute('href', fileURL);
-            downloadAnchorNode.setAttribute('download', data['filename'] + '.pdf');
+            let dataStr;
+            let filename = data["filename"] + "." + downloadType;
+            stream("Downloading " + downloadType.toUpperCase() + " report: " + filename);
+            switch(downloadType) {
+                case "pdf":
+                    dataStr = URL.createObjectURL(new Blob([data["pdf_bytes"]], { type: "application/pdf" }));
+                    break;
+                case "json":
+                    dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data["json_bytes"], null, 2));
+                    break;
+                default:
+                    stream("Unknown report type returned");
+                    return;
+            }
+            let downloadAnchorNode = document.createElement("a");
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", filename);
             document.body.appendChild(downloadAnchorNode);
             downloadAnchorNode.click();
             downloadAnchorNode.remove();
         }
     }
-    restRequest('POST', {'operations': $('#debrief-operation-list').val(), 'graphs': getGraphData()}, callback, '/plugin/debrief/pdf');
 }
 
 function findResults(elem, lnk){
@@ -197,7 +209,7 @@ function getGraphData() {
 
 //        re-enable any hidden nodes
         $("#copy-svg .link").show()
-        $("#copy-svg .next_link").show()
+        $("#copy-svg polyline").show()
         $("#copy-svg .link .icons").children('.svg-icon').show();
         $("#copy-svg .link .icons").children('.hidden').remove();
         $("#copy-svg text").show();
@@ -215,10 +227,10 @@ function getGraphData() {
 
 function toggleLabels(input) {
     if($(input).prop("checked")) {
-        $("#debrief-graph text").show();
+        $("#debrief-graph .label").show();
     }
     else {
-        $("#debrief-graph text").hide();
+        $("#debrief-graph .label").hide();
     }
 }
 
@@ -275,7 +287,7 @@ function visualizeStepForward() {
         $(nextNode).show();
 
         let showingNodesIds = nodesOrderedByTime[graphId].filter(node => node.style.display != "none").map(node => node.id);
-        let relatedLines = $("#" + graphId + " line").filter(function(idx, line) {
+        let relatedLines = $("#" + graphId + " polyline").filter(function(idx, line) {
             return showingNodesIds.includes("node-" + $(line).data("target")) && showingNodesIds.includes("node-" + $(line).data("source"))
         })
         relatedLines.show();
@@ -296,7 +308,7 @@ function visualizeStepBack() {
         prevNode.hide();
 
         let showingNodesIds = nodesOrderedByTime[graphId].filter(node => node.style.display != "none").map(node => node.id);
-        let relatedLines = $("#" + graphId + " line").filter(function(idx, line) {
+        let relatedLines = $("#" + graphId + " polyline").filter(function(idx, line) {
             return !(showingNodesIds.includes("node-" + $(line).data("target")) && showingNodesIds.includes("node-" + $(line).data("source")))
         })
         relatedLines.hide();
@@ -307,13 +319,13 @@ function visualizeStepBack() {
 function visualizeBeginning() {
     let graphId = getVisibleOpGraphId()
     $("#" + graphId + " .node:not(.c2)").hide();
-    $("#" + graphId + " line").hide();
+    $("#" + graphId + " polyline").hide();
 }
 
 function visualizeEnd() {
     let graphId = getVisibleOpGraphId()
     $("#" + graphId + " .node").show();
-    $("#" + graphId + " line").show();
+    $("#" + graphId + " polyline").show();
 }
 
 function getNodesOrderedByTime() {
@@ -331,6 +343,7 @@ function getNodesOrderedByTime() {
     }
     let graphNodesByTime = {};
     graphNodesByTime["debrief-graph-svg"] = getSortedNodes("debrief-graph-svg");
+    graphNodesByTime["debrief-attackpath-svg"] = getSortedNodes("debrief-attackpath-svg");
     graphNodesByTime["debrief-tactic-svg"] = getSortedNodes("debrief-tactic-svg");
     graphNodesByTime["debrief-technique-svg"] = getSortedNodes("debrief-technique-svg");
     return graphNodesByTime;
@@ -338,4 +351,252 @@ function getNodesOrderedByTime() {
 
 function getVisibleOpGraphId() {
     return $(".op-svg").filter(function() { return $(this).css("display") != "none" }).attr("id");
+}
+
+function reportSelectAll() {
+    if ($("#report-select-all").prop("checked")) {
+        $(".debrief-report-opt").prop("checked", true);
+    }
+}
+
+function uncheckSelectAll(checkbox) {
+    if (!$(checkbox).prop("checked")) {
+        $("#report-select-all").prop("checked", false);
+    }
+}
+
+function uploadHeaderLogo() {
+	let logoFiles = document.getElementById("logo-file").files;
+	if (logoFiles.length > 0){
+		let formData = new FormData();
+		let logoFile = logoFiles[0];
+		formData.append("header-logo", logoFile);
+		fetch('/plugin/debrief/logo', {method: "POST", body: formData}).then( response => {
+			if (response.status == 200) {
+				stream("Logo file uploaded!");
+				response.json().then(data => {
+					if ('filename' in data) {
+						let returnedFilename = data['filename'];
+						updateLogoSelection(returnedFilename);
+						showLogoPreview();
+					} else {
+						stream("Did not receive uploaded filename from server.");
+					}
+				});
+			}
+		}).catch( e=> {
+			stream("Error uploading logo: " + e.message);
+		});
+	}
+}
+
+function triggerLogoUploadButton() {
+	document.getElementById('logo-file').click();
+}
+
+function updateReportSectionOrderingList() {
+	var reportSections = document.getElementsByClassName("debrief-report-opt");
+	var oldOrderedList = JSON.parse(localStorage.getItem('report-section-order'));
+	if (oldOrderedList == null) {
+		oldOrderedList = [];
+	}
+	oldSelectedSet = new Set(oldOrderedList);
+	currSelectedSet = new Set();
+
+	for (var i = 0; i < reportSections.length; i++) {
+		var reportSection = reportSections[i];
+		if (reportSection.checked) {
+			currSelectedSet.add(reportSection.id);
+			if (!oldSelectedSet.has(reportSection.id)) {
+				// New report section selected. Add to end of ordered list
+				oldOrderedList.push(reportSection.id);
+				oldSelectedSet.add(reportSection.id);
+			}
+		}
+	}
+
+	// Check if there are any sections to remove from ordered list.
+	var newOrderedList = [];
+	for (i = 0; i < oldOrderedList.length; i++) {
+		var sectionId = oldOrderedList[i];
+		if (currSelectedSet.has(sectionId)) {
+			section = document.getElementById(sectionId);
+			newOrderedList.push(sectionId);
+		}
+	}
+	localStorage.setItem('report-section-order', JSON.stringify(newOrderedList));
+	displayReportSectionOrderingList();
+}
+
+function toggleReportSection() {
+	// Current selected section
+	var selectedItemId = $('#selected-report-section-ordering-list').val();
+
+	// Ordered list of report sections
+	var orderedList = JSON.parse(localStorage.getItem('report-section-order'));
+
+	// Check if current selected section is enabled or not
+	var enabledMapping = JSON.parse(localStorage.getItem('report-section-selection-dict'));
+	if (selectedItemId in enabledMapping) {
+		if (enabledMapping[selectedItemId]) {
+			// Previously enabled. Disable section.
+			enabledMapping[selectedItemId] = false;
+			let index = orderedList.indexOf(selectedItemId);
+			if (index >= 0) {
+				orderedList.splice(index, 1);
+			}
+		} else {
+			// Previously disabled. Enable section.
+			enabledMapping[selectedItemId] = true;
+			orderedList.push(selectedItemId);
+		}
+		localStorage.setItem('report-section-order', JSON.stringify(orderedList));
+		localStorage.setItem('report-section-selection-dict', JSON.stringify(enabledMapping));
+	} else {
+		stream("Could not recognize " + selectedItemId + " as a known report section");
+	}
+}
+
+function displayReportSections() {
+	// current selected item
+	var selectedItemId = $('#selected-report-section-ordering-list').val();
+
+	// ordered enabled sections
+	var orderedList = JSON.parse(localStorage.getItem('report-section-order'));
+
+	// display names
+	var displayNames = JSON.parse(localStorage.getItem('report-section-names'));
+
+	// get disabled sections
+	var enabledMapping = JSON.parse(localStorage.getItem('report-section-selection-dict'));
+	var disabledSections = [];
+	for (const [ sectionId, enabled ] of Object.entries(enabledMapping)) {
+		if (!enabled) {
+			disabledSections.push(sectionId)
+		}
+	}
+
+	// sort disabled sections alphabetically by display name
+	disabledSections.sort(function(a, b) {
+		if (displayNames[a] < displayNames[b]) {
+			return -1;
+		}
+		if (displayNames[a] > displayNames[b]) {
+			return 1;
+		}
+		return 0;
+	});
+
+	// Clear current display
+	document.getElementById("selected-report-section-ordering-list").innerHTML = '';
+
+	// Display enabled sections
+	var enabledOptGroupHTML = '<optgroup label="ENABLED SECTIONS">';
+	for (i = 0; i < orderedList.length; i++) {
+		var sectionId = orderedList[i];
+		enabledOptGroupHTML += '<option class="ordered-report-section" value="' + sectionId + '">' + displayNames[sectionId] + '</option>';
+	}
+	enabledOptGroupHTML += '</optgroup>';
+	document.getElementById("selected-report-section-ordering-list").insertAdjacentHTML('beforeend', enabledOptGroupHTML);
+
+	var separatorHTML = '<hr style="margin: 5 0 5;">';
+	document.getElementById("selected-report-section-ordering-list").insertAdjacentHTML('beforeend', separatorHTML);
+
+	// Display disabled sections
+	var disabledOptGroupHTML = '<optgroup label="DISABLED SECTIONS">';
+	var numDisabled = disabledSections.length;
+	for (i = 0; i < numDisabled; i++) {
+		var sectionId = disabledSections[i];
+		disabledOptGroupHTML += '<option class="disabled-report-section" value="' + sectionId + '">' + displayNames[sectionId] + '</option>';
+	}
+	disabledOptGroupHTML += '</optgroup>';
+	document.getElementById("selected-report-section-ordering-list").insertAdjacentHTML('beforeend', disabledOptGroupHTML);
+
+	// Keep selected item highlighted
+	if (selectedItemId != null) {
+		$('#selected-report-section-ordering-list').val(selectedItemId);
+	}
+}
+
+function initSectionOrderingList(reportSectionNames) {
+	var baseReportSectionOrdering = [
+		"reportsection-main-summary",
+        "reportsection-statistics",
+        "reportsection-agents",
+        "reportsection-default-graph",
+        "reportsection-attackpath-graph",
+        "reportsection-tactic-graph",
+        "reportsection-technique-graph",
+        "reportsection-fact-graph",
+        "reportsection-tactic-technique-table",
+        "reportsection-steps-table",
+        "reportsection-facts-table",
+    ]
+
+    var orderedReportSectionNames = {};
+	var reportSectionEnabledMapping = {};
+
+	// Make sure the base sections appear first in order
+	baseReportSectionOrdering.forEach(function(id, index) {
+		if (id in reportSectionNames) {
+			orderedReportSectionNames[id] = reportSectionNames[id]
+		}
+	});
+
+	for (var key in reportSectionNames) {
+		reportSectionEnabledMapping[key] = true;
+
+		// Fill in remaining section ordering
+		orderedReportSectionNames[key] = reportSectionNames[key]
+	}
+
+	// Contains list of element IDs for selected report sections.
+	localStorage.setItem('report-section-order', JSON.stringify(Object.keys(orderedReportSectionNames)));
+
+	// Maps report section element IDs to whether or not they are enabled
+	localStorage.setItem('report-section-selection-dict', JSON.stringify(reportSectionEnabledMapping));
+
+	// Contains mapping of report section element IDs to their names
+	localStorage.setItem('report-section-names', JSON.stringify(orderedReportSectionNames));
+}
+
+function moveReportSection(direction) {
+	var orderedList = JSON.parse(localStorage.getItem('report-section-order'));
+	var selectedSectionId = $('#selected-report-section-ordering-list').val();
+	var oldIndex = orderedList.indexOf(selectedSectionId);
+	if (oldIndex >= 0) {
+		if (direction.toLowerCase() === 'up') {
+			if (oldIndex > 0) {
+				orderedList.splice(oldIndex, 1);
+				orderedList.splice(oldIndex - 1, 0, selectedSectionId);
+			}
+		} else if (direction.toLowerCase() === 'down') {
+			if (oldIndex < orderedList.length - 1) {
+				orderedList.splice(oldIndex, 1);
+				orderedList.splice(oldIndex + 1, 0, selectedSectionId);
+			}
+		}
+		// Update storage
+		localStorage.setItem('report-section-order', JSON.stringify(orderedList));
+	}
+}
+
+function updateLogoSelection(filename) {
+	// Add the newly uploaded logo file to the displayed list of logos.
+	let rowHTML = '<option class="header-logo-option" value="' + filename + '">' + filename + '</option>';
+	let logoList = document.getElementById("debrief-header-logo-list");
+	logoList.insertAdjacentHTML('beforeend', rowHTML);
+	logoList.value = filename;
+}
+
+function showLogoPreview() {
+	var selectedLogoName = $('#debrief-header-logo-list').val();
+	let element = document.getElementById("debrief-report-logo-preview");
+	if (element.hasChildNodes()) {
+		element.removeChild(element.childNodes[0]);
+	}
+	if (selectedLogoName != null && selectedLogoName != 'no-logo') {
+		let imgHTML = '<img style="width: 100%; height: auto; border-radius:0; border:none;" src="/logodebrief/header-logos/' + selectedLogoName  + '"/>';
+		element.insertAdjacentHTML('beforeend', imgHTML);
+	}
 }

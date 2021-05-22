@@ -10,24 +10,22 @@ class Graph {
     }
 }
 
-var width = 1100,
-    height = 400
-
-$('.svg-container').attr("width", width);
-$('.svg-container').attr("height", height);
+var width = $("#debrief-graph").width(),
+    height = $("#debrief-graph").height()
 
 $('svg').width('100%')
 $('svg').height('100%')
 
-var link_lengths = {'http': 100, 'next_link': 50, 'has_agent': 50, 'relationship': 100};
+var link_lengths = {'agent_contact': 100, 'next_link': 50, 'has_agent': 50, 'relationship': 100};
 var node_charges = {'c2': -200, 'operation': -100, 'agent': -200, 'link': -150, 'fact': -50, 'tactic': -200, 'technique_name': -200}
 
 var graphSvg = new Graph("#debrief-graph-svg", "graph", d3.select("#op-tooltip")),
-    tacticSvg = new Graph("#debrief-tactic-svg", "tactic", d3.select("#op-tooltip")),
-    techniqueSvg = new Graph("#debrief-technique-svg", "technique", d3.select("#op-tooltip")),
-    factSvg = new Graph("#debrief-fact-svg", "fact", d3.select("#fact-tooltip"))
+    attackPathSvg = new Graph("#debrief-attackpath-svg", "attackpath", d3.select("#op-tooltip")),
+    tacticSvg = new Graph("#debrief-tactic-svg", "tactic", d3.select('#op-tooltip')),
+    techniqueSvg = new Graph("#debrief-technique-svg", "technique", d3.select('#op-tooltip')),
+    factSvg = new Graph("#debrief-fact-svg", "fact", d3.select('#fact-tooltip'))
 
-var graphs = [graphSvg, factSvg, tacticSvg, techniqueSvg];
+var graphs = [graphSvg, attackPathSvg, factSvg, tacticSvg, techniqueSvg];
 
 var imgs = {
     "server": "debrief/img/cloud.svg",
@@ -85,7 +83,7 @@ function updateReportGraph(operations){
         buildGraph(graphObj, operations)
         graphObj.simulation.alpha(1).restart();
         graphObj.svg.call(d3.zoom().scaleExtent([0.5, 5]).on("zoom", function() {
-            d3.select(graphObj.id + " .container")
+            d3.select(graphObj.id + " .graphContainer")
                 .attr("transform", "translate(" + d3.event.transform.x + "," + d3.event.transform.y + ")scale(" + d3.event.transform.k + ")");
         }));
     });
@@ -95,7 +93,6 @@ function buildGraph(graphObj, operations) {
     let url = "/plugin/debrief/graph?type=" + graphObj.type + "&operations=" + operations.join();
     d3.json(url, function (error, graph) {
         if (error) throw error;
-        console.log(graph);
         writeGraph(graph, graphObj);
         if (graphObj.type == "fact") {
             limitFactsDisplayed(operations);
@@ -124,18 +121,22 @@ function writeGraph(graph, graphObj) {
                         .attr("width", "100%")
                         .attr("height", "100%")
 
-    var link = container.append("g")
+    var graphContainer = container.append("g")
+                        .attr("class", "graphContainer")
+
+    var arrows = graphContainer.append("g")
                 .style("stroke", "#aaa")
-                .selectAll("line")
+                .style("fill", "#aaa")
+                .selectAll("polyline")
                 .data(graph.links)
-                .enter().append("line")
+                .enter().append("polyline")
                 .attr("data-source", function(d) { return d.source })
                 .attr("data-target", function(d) { return d.target })
                 .attr("class", function(d) { return d.type;})
-                .attr('marker-end','url(#arrowhead' + graphObj.type + ')');
+                .attr("stroke-linecap", "round");
 
     container.selectAll('g.nodes').remove();
-    var nodes = container.append("g")
+    var nodes = graphContainer.append("g")
         .attr("class", "nodes")
         .selectAll("g")
         .data(graph.nodes)
@@ -285,11 +286,10 @@ function writeGraph(graph, graphObj) {
         .distance(function(d) {return link_lengths[d.type];});
 
     function ticked() {
-        link
-            .attr("x1", function(d) { return d.source.x; })
-            .attr("y1", function(d) { return d.source.y; })
-            .attr("x2", function(d) { return d.target.x; })
-            .attr("y2", function(d) { return d.target.y; });
+
+        arrows
+            .attr("points", function(d) { return getPolylineCoords(d.source.x, d.source.y, d.target.x, d.target.y) })
+            .attr("transform", function(d) { return rotateArrow(d.source.x, d.source.y, d.target.x, d.target.y) });
 
         nodes
             .attr('transform', function(d) {return 'translate(' + d.x + ',' + d.y + ')';})
@@ -360,6 +360,23 @@ function writeGraph(graph, graphObj) {
         }
         return ret;
     }
+
+    function getPolylineCoords(x1, y1, x2, y2) {
+        let p1 = `${x1} ${y1}`;
+        let x = x1 - Math.hypot(x2-x1, y2-y1) + 17;
+        let p2 = `${x} ${y1}`;
+        let p3 = `${x + 7.5} ${y1 + 4}`;
+        let p4 = `${x + 7.5} ${y1 - 4}`;
+        let p5 = p2;
+        return `${p1}, ${p2}, ${p3}, ${p4}, ${p5}`;
+    }
+
+    function rotateArrow(x1, y1, x2, y2) {
+      let deltaX = x2 - x1;
+      let deltaY = y2 - y1;
+      let angleDeg = Math.atan2(deltaY, deltaX) * 180 / Math.PI + 180;
+      return `rotate(${angleDeg}, ${x1}, ${y1})`;
+    }
 }
 
 function updateIconAttr(svg, status) {
@@ -399,8 +416,13 @@ function limitFactsDisplayed(operations) {
         $("#fact-limit-msg p").html("More than " + factDisplayLimit + " facts found in the operation(s) selected. For readability, only the first " + factDisplayLimit + " facts of each operation are displayed.");
         $("#fact-limit-msg").show();
         operations.forEach(function(opId) {
-            $("#debrief-fact-svg g.fact[data-op='" + opId + "']").slice(factDisplayLimit).remove();
-            $("#debrief-fact-svg line.relationship[data-source='" + opId + "']").slice(factDisplayLimit).remove();
+            let nodesToRemove = $("#debrief-fact-svg g.fact[data-op='" + opId + "']").splice(factDisplayLimit);
+            nodesToRemove.forEach(function(node) {
+                let nodeId = node.id.split("node-")[1];
+                $("#debrief-fact-svg polyline.relationship[data-source='" + nodeId + "']").remove();
+                $("#debrief-fact-svg polyline.relationship[data-target='" + nodeId + "']").remove();
+                node.remove();
+            })
         })
     }
 }
