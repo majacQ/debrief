@@ -19,15 +19,16 @@ $('.svg-container').attr("height", height);
 $('svg').width('100%')
 $('svg').height('100%')
 
-var link_lengths = {'http': 100, 'next_link': 50, 'has_agent': 50, 'relationship': 100};
+var link_lengths = {'agent_contact': 100, 'next_link': 50, 'has_agent': 50, 'relationship': 100};
 var node_charges = {'c2': -200, 'operation': -100, 'agent': -200, 'link': -150, 'fact': -50, 'tactic': -200, 'technique_name': -200}
 
-var graphSvg = new Graph("#debrief-graph-svg", "graph", null),
+var graphSvg = new Graph("#debrief-graph-svg", "graph", d3.select("#op-tooltip")),
+    attackPathSvg = new Graph("#debrief-attackpath-svg", "attackpath", d3.select("#op-tooltip")),
     tacticSvg = new Graph("#debrief-tactic-svg", "tactic", d3.select('#op-tooltip')),
     techniqueSvg = new Graph("#debrief-technique-svg", "technique", d3.select('#op-tooltip')),
     factSvg = new Graph("#debrief-fact-svg", "fact", d3.select('#fact-tooltip'))
 
-var graphs = [graphSvg, factSvg, tacticSvg, techniqueSvg];
+var graphs = [graphSvg, attackPathSvg, factSvg, tacticSvg, techniqueSvg];
 
 var imgs = {
     "server": "debrief/img/cloud.svg",
@@ -95,10 +96,8 @@ function buildGraph(graphObj, operations) {
     let url = "/plugin/debrief/graph?type=" + graphObj.type + "&operations=" + operations.join();
     d3.json(url, function (error, graph) {
         if (error) throw error;
-        console.log(graph);
         writeGraph(graph, graphObj);
         if (graphObj.type == "fact") {
-            updateFactCounts(graph);
             limitFactsDisplayed(operations);
         }
     });
@@ -125,15 +124,16 @@ function writeGraph(graph, graphObj) {
                         .attr("width", "100%")
                         .attr("height", "100%")
 
-    var link = container.append("g")
+    var arrows = container.append("g")
                 .style("stroke", "#aaa")
-                .selectAll("line")
+                .style("fill", "#aaa")
+                .selectAll("polyline")
                 .data(graph.links)
-                .enter().append("line")
+                .enter().append("polyline")
                 .attr("data-source", function(d) { return d.source })
                 .attr("data-target", function(d) { return d.target })
                 .attr("class", function(d) { return d.type;})
-                .attr('marker-end','url(#arrowhead' + graphObj.type + ')');
+                .attr("stroke-linecap", "round");
 
     container.selectAll('g.nodes').remove();
     var nodes = container.append("g")
@@ -144,6 +144,7 @@ function writeGraph(graph, graphObj) {
             .attr("data-op", function(d) { return d.operation })
             .attr("id", function(d) { return "node-" + d.id })
             .attr("class", function(d) { return "node " + d.type; })
+            .attr("data-timestamp", function(d) { return d.timestamp; })
             .call(d3.drag()
                 .on("start", dragstarted)
                 .on("drag", dragged)
@@ -246,6 +247,35 @@ function writeGraph(graph, graphObj) {
             return d.img.indexOf(" ") == -1 ? d.img : d.type;
         });
 
+    if (graphObj.type == "fact") {
+        let legendHeight = 50 + parseInt($("#legend-rect-" + graphObj.type).attr("height"));
+
+        var factCountTable  = legend.append("g")
+            .attr("class", "fact-count")
+
+        var factEntry = factCountTable.selectAll("g")
+            .data(graph.nodes.filter(x => x.type == "fact").filter(isUniqueFactTrait))
+            .enter()
+            .append("g")
+
+        factEntry.append("text")
+            .attr("x", width - 170)
+            .attr("y", function(d, i) { return legendHeight + i * 20;})
+            .style("fill", "white")
+            .style("font-size", 13)
+            .text(function(d) {
+                return graph.nodes.filter(x => x.name == d.name).length;
+            })
+
+        factEntry.append("text")
+            .attr("x", width - 135)
+            .attr("y", function(d, i) { return legendHeight + i * 20; })
+            .style("fill", "white")
+            .style("font-size", 13)
+            .style("font-weight", "normal")
+            .text(function(d) { return d.name; })
+    }
+
     let simulation = graphObj.simulation;
 
     simulation
@@ -256,11 +286,10 @@ function writeGraph(graph, graphObj) {
         .distance(function(d) {return link_lengths[d.type];});
 
     function ticked() {
-        link
-            .attr("x1", function(d) { return d.source.x; })
-            .attr("y1", function(d) { return d.source.y; })
-            .attr("x2", function(d) { return d.target.x; })
-            .attr("y2", function(d) { return d.target.y; });
+
+        arrows
+            .attr("points", function(d) { return getPolylineCoords(d.source.x, d.source.y, d.target.x, d.target.y) })
+            .attr("transform", function(d) { return rotateArrow(d.source.x, d.source.y, d.target.x, d.target.y) });
 
         nodes
             .attr('transform', function(d) {return 'translate(' + d.x + ',' + d.y + ')';})
@@ -300,30 +329,54 @@ function writeGraph(graph, graphObj) {
       if (!d3.event.active) simulation.alphaTarget(0);
     }
 
-  function generateTooltipHTML(d) {
-    let ret = "";
-    if (d["type"] == "operation") {
-        ret += "name: " + d["name"] + "<br/>";
-        ret += "op_id: " + d["id"] + "<br/>";
-    }
-    else if (d["type"] == "tactic" || d["type"] == "technique_name") {
-        let p = d["attrs"][d["type"]]
-        ret += d["type"] + ": " + p + "<br/>";
-        for (let attr in d["attrs"]) {
-            if (attr != d["type"]) {
-                ret += attr + ": " + d["attrs"][attr] + "<br/>";
-            }
+    function generateTooltipHTML(d) {
+        let ret = "";
+        switch (d["type"]) {
+            case "operation":
+                ret += "name: " + d["name"] + "<br/>";
+                ret += "op_id: " + d["id"] + "<br/>";
+                ret += "created: " + d["timestamp"] + "<br/>";
+                break;
+            case "tactic":
+            case "technique_name":
+                let p = d["attrs"][d["type"]]
+                ret += d["type"] + ": " + p + "<br/>";
+                ret += "created: " + d["timestamp"] + "<br/>";
+                for (let attr in d["attrs"]) {
+                    if (attr != d["type"]) {
+                        ret += attr + ": " + d["attrs"][attr] + "<br/>";
+                    }
+                }
+                break;
+            default:
+                ret += d["timestamp"] ? "created: " + d["timestamp"] + "<br/>" : "";
+                for (let attr in d["attrs"]) {
+                    if (d["attrs"][attr] != null) {
+                        ret += attr + ": ";
+                        ret += attr == "status" ? statusName(d["attrs"][attr]) : d["attrs"][attr];
+                        ret += "<br/>";
+                    }
+                }
         }
+        return ret;
     }
-    else {
-        for (let attr in d["attrs"]) {
-            if (d["attrs"][attr]) {
-                ret += attr + ": " + d["attrs"][attr] + "<br/>";
-            }
-        }
+
+    function getPolylineCoords(x1, y1, x2, y2) {
+        let p1 = `${x1} ${y1}`;
+        let x = x1 - Math.hypot(x2-x1, y2-y1) + 17;
+        let p2 = `${x} ${y1}`;
+        let p3 = `${x + 7.5} ${y1 + 4}`;
+        let p4 = `${x + 7.5} ${y1 - 4}`;
+        let p5 = p2;
+        return `${p1}, ${p2}, ${p3}, ${p4}, ${p5}`;
     }
-    return ret
-  }
+
+    function rotateArrow(x1, y1, x2, y2) {
+      let deltaX = x2 - x1;
+      let deltaY = y2 - y1;
+      let angleDeg = Math.atan2(deltaY, deltaX) * 180 / Math.PI + 180;
+      return `rotate(${angleDeg}, ${x1}, ${y1})`;
+    }
 }
 
 function updateIconAttr(svg, status) {
@@ -357,31 +410,6 @@ function statusColor(status) {
     return '#555555';
 }
 
-function updateFactCounts(graph) {
-    let factCounts = getFactCounts(graph);
-    $("#fact-count").empty();
-    for (var fact in factCounts) {
-        let rowData = "<td class='fact-count'>" + factCounts[fact] + "</td><td>" + fact + "</td>";
-        $("#fact-count").append($("<tr>" + rowData + "</tr>"));
-    }
-}
-
-function getFactCounts(graph) {
-    let factDict = {};
-    for (var i in graph['nodes']) {
-        let fact = graph['nodes'][i];
-        if (fact.type == 'fact') {
-            if (fact.name in factDict) {
-                factDict[fact.name] += 1;
-            }
-            else {
-                factDict[fact.name] = 1;
-            }
-        }
-    }
-    return factDict;
-}
-
 function limitFactsDisplayed(operations) {
     let hasOverFactLimit = operations.some(function(op) { return $("#debrief-fact-svg g.fact[data-op='" + op + "']").slice(factDisplayLimit).length > 0 })
     if (hasOverFactLimit) {
@@ -389,7 +417,7 @@ function limitFactsDisplayed(operations) {
         $("#fact-limit-msg").show();
         operations.forEach(function(opId) {
             $("#debrief-fact-svg g.fact[data-op='" + opId + "']").slice(factDisplayLimit).remove();
-            $("#debrief-fact-svg line.relationship[data-source='" + opId + "']").slice(factDisplayLimit).remove();
+            $("#debrief-fact-svg polyline.relationship[data-source='" + opId + "']").slice(factDisplayLimit).remove();
         })
     }
 }
@@ -402,4 +430,9 @@ function isUniqueImg(value, index, self) {
 
 function addLinkImg(graphType) {
     return graphType == "graph" ? [{"name": "link-image", "img": "link"}] : [];
+}
+
+function isUniqueFactTrait(value, index, self) {
+    let arr = Array.from(self, x => x.name);
+    return arr.indexOf(value.name) == index;
 }

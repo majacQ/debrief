@@ -1,3 +1,6 @@
+var nodesOrderedByTime;
+var visualizeInterval;
+
 $( document ).ready(function() {
     $('#debrief-download-raw').click(function () {
         let operations = $('#debrief-operation-list').val();
@@ -31,6 +34,10 @@ $( document ).ready(function() {
         }
     });
 
+    $(".debrief-sidebar-header").click(function(){
+        $(this).next(".debrief-sidebar").slideToggle("slow");
+    });
+
     function clearReport(){
         $("#report-operations tbody tr").remove();
         $("#report-steps tbody tr").remove();
@@ -46,6 +53,7 @@ $( document ).ready(function() {
         })
         updateAgentTable(data['agents']);
         updateTacticTechniqueTable(data['ttps']);
+        nodesOrderedByTime = getNodesOrderedByTime();
     }
 
     function updateOperationTable(op){
@@ -121,24 +129,6 @@ $( document ).ready(function() {
         })
     }
 
-    function statusName(status) {
-        if (status === 0) {
-            return 'success';
-        } else if (status === -2) {
-            return 'discarded';
-        } else if (status === 1) {
-            return 'failure';
-        } else if (status === 124) {
-            return 'timeout';
-        } else if (status === -3) { // && chain.collect) {
-            return 'collected';
-        } else if (status === -4) {
-            return 'untrusted';
-        } else if (status === -5) {
-            return 'visibility';
-        }
-        return 'queued';
-    }
 });
 
 function switchGraphView(btn) {
@@ -167,7 +157,13 @@ function downloadPDF() {
             downloadAnchorNode.remove();
         }
     }
-    restRequest('POST', {'operations': $('#debrief-operation-list').val(), 'graphs': getGraphData()}, callback, '/plugin/debrief/pdf');
+    let pdfSections = {};
+    $(".debrief-pdf-opt").each(function(idx, checkbox) {
+        let key = $(checkbox).attr("id").split(/-(.+)/)[1];
+        pdfSections[key] = $(checkbox).prop("checked");
+    })
+    restRequest('POST', {'operations': $('#debrief-operation-list').val(), 'graphs': getGraphData(), 'sections': pdfSections},
+                 callback, '/plugin/debrief/pdf');
 }
 
 function findResults(elem, lnk){
@@ -211,7 +207,7 @@ function getGraphData() {
 
 //        re-enable any hidden nodes
         $("#copy-svg .link").show()
-        $("#copy-svg .next_link").show()
+        $("#copy-svg polyline").show()
         $("#copy-svg .link .icons").children('.svg-icon').show();
         $("#copy-svg .link .icons").children('.hidden').remove();
         $("#copy-svg text").show();
@@ -229,10 +225,10 @@ function getGraphData() {
 
 function toggleLabels(input) {
     if($(input).prop("checked")) {
-        $("#debrief-graph text").show();
+        $("#debrief-graph .label").show();
     }
     else {
-        $("#debrief-graph text").hide();
+        $("#debrief-graph .label").hide();
     }
 }
 
@@ -262,5 +258,107 @@ function toggleIcons(input) {
     }
     else {
         $("#debrief-graph .svg-icon:not(.hidden)").hide();
+    }
+}
+
+function visualizeTogglePlay() {
+    let graphId = getVisibleOpGraphId()
+    if ($("#graph-media-play").hasClass("paused")) {
+        if (!nodesOrderedByTime[graphId].find(node => node.style.display == "none")) {
+            visualizeBeginning();
+        }
+        $("#graph-media-play").removeClass("paused");
+        $("#graph-media-play").html("||");
+        visualizeInterval = setInterval(visualizeStepForward, 1000);
+    }
+    else {
+        $("#graph-media-play").html("&#x25B6;");
+        $("#graph-media-play").addClass("paused");
+        clearInterval(visualizeInterval);
+    }
+}
+
+function visualizeStepForward() {
+    let graphId = getVisibleOpGraphId()
+    let nextNode = nodesOrderedByTime[graphId].find(node => node.style.display == "none");
+    if (nextNode) {
+        $(nextNode).show();
+
+        let showingNodesIds = nodesOrderedByTime[graphId].filter(node => node.style.display != "none").map(node => node.id);
+        let relatedLines = $("#" + graphId + " polyline").filter(function(idx, line) {
+            return showingNodesIds.includes("node-" + $(line).data("target")) && showingNodesIds.includes("node-" + $(line).data("source"))
+        })
+        relatedLines.show();
+    }
+
+    if (!$("#graph-media-play").hasClass("paused") && !nodesOrderedByTime[graphId].find(node => node.style.display == "none")) {
+        $("#graph-media-play").addClass("paused");
+        $("#graph-media-play").html("&#x25B6;");
+        clearInterval(visualizeInterval);
+    }
+}
+
+function visualizeStepBack() {
+    let graphId = getVisibleOpGraphId()
+    let prevNode = $(nodesOrderedByTime[graphId].slice().reverse().find(node => node.style.display != "none"));
+
+    if (prevNode.attr("id") != "#node-0") {
+        prevNode.hide();
+
+        let showingNodesIds = nodesOrderedByTime[graphId].filter(node => node.style.display != "none").map(node => node.id);
+        let relatedLines = $("#" + graphId + " polyline").filter(function(idx, line) {
+            return !(showingNodesIds.includes("node-" + $(line).data("target")) && showingNodesIds.includes("node-" + $(line).data("source")))
+        })
+        relatedLines.hide();
+    }
+
+}
+
+function visualizeBeginning() {
+    let graphId = getVisibleOpGraphId()
+    $("#" + graphId + " .node:not(.c2)").hide();
+    $("#" + graphId + " polyline").hide();
+}
+
+function visualizeEnd() {
+    let graphId = getVisibleOpGraphId()
+    $("#" + graphId + " .node").show();
+    $("#" + graphId + " polyline").show();
+}
+
+function getNodesOrderedByTime() {
+    function compareTimestamp(a, b) {
+        if (Date.parse(a.dataset.timestamp) < Date.parse(b.dataset.timestamp)) {
+            return -1;
+        }
+        if (Date.parse(a.dataset.timestamp) > Date.parse(b.dataset.timestamp)) {
+            return 1;
+        }
+        return 0;
+    }
+    function getSortedNodes(id) {
+        return $("#" + id + " .node").toArray().sort(compareTimestamp);
+    }
+    let graphNodesByTime = {};
+    graphNodesByTime["debrief-graph-svg"] = getSortedNodes("debrief-graph-svg");
+    graphNodesByTime["debrief-attackpath-svg"] = getSortedNodes("debrief-attackpath-svg");
+    graphNodesByTime["debrief-tactic-svg"] = getSortedNodes("debrief-tactic-svg");
+    graphNodesByTime["debrief-technique-svg"] = getSortedNodes("debrief-technique-svg");
+    return graphNodesByTime;
+}
+
+function getVisibleOpGraphId() {
+    return $(".op-svg").filter(function() { return $(this).css("display") != "none" }).attr("id");
+}
+
+function pdfSelectAll() {
+    if ($("#pdf-select-all").prop("checked")) {
+        $(".debrief-pdf-opt").prop("checked", true);
+    }
+}
+
+function uncheckSelectAll(checkbox) {
+    if (!$(checkbox).prop("checked")) {
+        $("#pdf-select-all").prop("checked", false);
     }
 }

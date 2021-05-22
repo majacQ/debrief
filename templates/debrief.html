@@ -13,8 +13,8 @@
         <div class="column section-border" style="flex:20%;text-align:left;padding:15px;">
             <h1 style="font-size:70px;margin-top:-20px;">Debrief</h1>
             <h2 style="margin-top:-50px">Campaign Analytics</h2>
-            <div>
-                <h4>OPERATIONS:</h4>
+            <p>Select from the operations below to view analytics. CTRL/CMD/SHIFT + click to select multiple operations.</p>
+            <div style="text-align: center">
                 <select id="debrief-operation-list" size="5" data-placeholder="No operations to show." multiple style="overflow-y:auto">
                   {% for op in operations %}
                         {%  if op.start|length%}
@@ -23,8 +23,10 @@
                   {% endfor %}
                 </select>
             </div>
-            <div>
-                <h4>GRAPH OPTIONS</h4>
+            <div class="sidebar-cutout sidebar-header debrief-sidebar-header">
+                <h4 style="margin-bottom:0px">GRAPH OPTIONS</h4>
+            </div>
+            <div class="sidebar-cutout debrief-sidebar" style="display: none">
                 <h5>Display Options</h5>
                 <input type="checkbox" id="show-labels" class="debrief-display-opt" value="labels" checked onclick="toggleLabels(this)">
                 <label for="show-labels">Show labels</label><br>
@@ -36,11 +38,38 @@
                 <input type="checkbox" id="show-tactic-icons" class="debrief-display-opt" value="tactic-icons" onclick="toggleTacticIcons(this)">
                 <label for="show-tactic-icons">Show steps as tactics</label>
             </div>
-            <div id="debrief-download">
-                <button id="debrief-download-raw" type="button" class="button-success atomic-button"
-                        style="margin-top:0;">Download JSON</button>
+            <div class="sidebar-cutout sidebar-header debrief-sidebar-header">
+                <h4 style="margin-bottom:0px">PDF REPORT OPTIONS</h4>
+            </div>
+            <div class="sidebar-cutout debrief-sidebar" style="display: none">
+                <h5>PDF Section Selection</h5>
+                <div class="debrief-pdf-select">
+                    <input type="checkbox" id="pdf-select-all" checked onClick="pdfSelectAll()">
+                    <label for="pdf-select-all">Select All</label>
+                    <hr style="margin: 5 0;">
+                    <input type="checkbox" class="debrief-pdf-opt" id="pdf-default-graph" checked onClick="uncheckSelectAll(this)">
+                    <label for="pdf-default-graph">Operations Graph</label><br>
+                    <input type="checkbox" class="debrief-pdf-opt" id="pdf-attackpath-graph" checked onClick="uncheckSelectAll(this)">
+                    <label for="pdf-attackpath-graph">Attack Path Graph</label><br>
+                    <input type="checkbox" class="debrief-pdf-opt" id="pdf-tactic-graph" checked onClick="uncheckSelectAll(this)">
+                    <label for="pdf-tactic-graph">Tactic Graph</label><br>
+                    <input type="checkbox" class="debrief-pdf-opt" id="pdf-technique-graph" checked onClick="uncheckSelectAll(this)">
+                    <label for="pdf-technique-graph">Technique Graph</label><br>
+                    <input type="checkbox" class="debrief-pdf-opt" id="pdf-fact-graph" checked onClick="uncheckSelectAll(this)">
+                    <label for="pdf-fact-graph">Fact Graph</label><br>
+                    <input type="checkbox" class="debrief-pdf-opt" id="pdf-tactic-technique-table" checked onClick="uncheckSelectAll(this)">
+                    <label for="pdf-tactic-technique-table">Tactic and Technique Table</label><br>
+                    <input type="checkbox" class="debrief-pdf-opt" id="pdf-steps-table" checked onClick="uncheckSelectAll(this)">
+                    <label for="pdf-steps-table">Operation Steps Tables</label><br>
+                    <input type="checkbox" class="debrief-pdf-opt" id="pdf-facts-table" checked onClick="uncheckSelectAll(this)">
+                    <label for="pdf-facts-table">Operation Facts Tables</label><br>
+                </div>
+            </div>
+            <div id="debrief-download" style="text-align: center;">
                 <button id="debrief-download-pdf" type="button" class="button-success atomic-button" style="margin-top:0;"
                         onclick="downloadPDF()">Download PDF</button>
+                <button id="debrief-download-raw" type="button" class="button-success atomic-button"
+                        style="margin-top:0;">Download JSON</button>
             </div>
         </div>
 
@@ -48,9 +77,18 @@
             <div id="debrief-graph" class="row svg-container">
                 <button id="graph-switch-technique" class="graph-switch" value="technique" onclick="switchGraphView(this)">Technique</button>
                 <button id="graph-switch-tactic" class="graph-switch" value="tactic" onclick="switchGraphView(this)">Tactic</button>
+                <button id="graph-switch-attackpath" class="graph-switch" value="attackpath" onclick="switchGraphView(this)">Attack Path</button>
                 <button id="graph-switch-graph" class="graph-switch" disabled value="graph" onclick="switchGraphView(this)">Default</button>
+                <div style="float: left;display: flex;position: absolute;bottom: 20px;left: 430px;">
+                    <div id="graph-media-beginning" class="graph-media-control" style="transform: scaleX(-1);" onclick="visualizeBeginning()">&#x25B6;&#x25B6;|</div>
+                    <div id="graph-media-backward" class="graph-media-control" style="transform: scaleX(-1);" onclick="visualizeStepBack()">&nbsp;&#x25B6;|&nbsp;</div>
+                    <div id="graph-media-play" class="graph-media-control paused" style="width: 20px;" onclick="visualizeTogglePlay()">&#x25B6;</div>
+                    <div id="graph-media-forward" class="graph-media-control" onclick="visualizeStepForward()">&nbsp;&#x25B6;|&nbsp;</div>
+                    <div id="graph-media-end" class="graph-media-control" onclick="visualizeEnd()">&#x25B6;&#x25B6;|</div>
+                </div>
                 <div class="d3-tooltip" id="op-tooltip" style="opacity: 0"></div>
                 <svg id="debrief-graph-svg" class="op-svg debrief-svg"></svg>
+                <svg id="debrief-attackpath-svg" class="op-svg debrief-svg" style="display: none"></svg>
                 <svg id="debrief-tactic-svg" class="op-svg debrief-svg" style="display: none"></svg>
                 <svg id="debrief-technique-svg" class="op-svg debrief-svg" style="display: none"></svg>
             </div>
@@ -116,11 +154,6 @@
                 <div id="fact-limit-msg">
                     <p style="margin: 0;"></p>
                 </div>
-                <div id="fact-legend" class="legend-box">
-                    <h4>Legend</h4>
-                    <ul id="fact-legend-list"  style="padding: 0px; margin: 0px"></ul>
-                </div>
-                <table id="fact-count"></table>
                 <div class="d3-tooltip" id="fact-tooltip" style="opacity: 0"></div>
                 <svg id="debrief-fact-svg" class="debrief-svg"></svg>
             </div>
@@ -145,3 +178,24 @@
 
 <div id="copy"></div>
 <div id="images" style="display: none"></div>
+
+<script>
+    function statusName(status) {
+        if (status === 0) {
+            return 'success';
+        } else if (status === -2) {
+            return 'discarded';
+        } else if (status === 1) {
+            return 'failure';
+        } else if (status === 124) {
+            return 'timeout';
+        } else if (status === -3) { // && chain.collect) {
+            return 'collected';
+        } else if (status === -4) {
+            return 'untrusted';
+        } else if (status === -5) {
+            return 'visibility';
+        }
+        return 'queued';
+    }
+</script>

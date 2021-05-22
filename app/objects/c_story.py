@@ -50,7 +50,7 @@ class Story:
         if name == 'graph':
             self.append_text('Operations Graph', styles['Heading3'], 12)
         else:
-            self.append_text('%s Graph' % name.capitalize(), styles['Heading3'], 0)
+            self.append_text('%s Graph' % name.title(), styles['Heading3'], 0)
         self.append_text(self.get_description(name), styles['Normal'], 12)
 
         self._adjust_icon_svgs(path)
@@ -81,7 +81,9 @@ class Story:
         for lnk in operation.chain:
             if len(lnk.facts) > 0:
                 for f in lnk.facts:
-                    fact_data.append([f.trait, f.value, str(f.score), lnk.paw, lnk.decode_bytes(lnk.command)])
+                    fact_data.append([f.trait, f.value, str(f.score),
+                                      '<link href="#agent-{0}" color="blue">{0}</link>'.format(lnk.paw),
+                                      lnk.decode_bytes(lnk.command)])
         return self.generate_table(fact_data, [1*inch, 1.2*inch, .6*inch, .6*inch, 3*inch])
 
     @staticmethod
@@ -215,6 +217,10 @@ class Story:
         elif obj == 'graph':
             return 'This is a graphical display of the agents connected to the command and control (C2), the ' \
                    'operations run, and the steps of each operation as they relate to the agents.'
+        elif obj == 'attack path':
+            return 'This is a graphical display of the attack path taken in the campaign. Agents link back to the ' \
+                   'command and control (C2) and are linked to each other via a lateral movement node if one agent ' \
+                   'performed lateral movement to gain access to the other agent.'
         elif obj == 'fact':
             return 'This graph displays the facts discovered by the operations run. Facts are attached to the ' \
                    'operation where they were discovered. Facts are also attached to the facts that led to their ' \

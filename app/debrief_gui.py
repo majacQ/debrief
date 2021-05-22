@@ -54,6 +54,7 @@ class DebriefGui(BaseWorld):
     async def graph(self, request):
         graphs = {
             'graph': self.debrief_svc.build_operation_d3,
+            'attackpath': self.debrief_svc.build_attackpath_d3,
             'fact': self.debrief_svc.build_fact_d3,
             'tactic': self.debrief_svc.build_tactic_d3,
             'technique': self.debrief_svc.build_technique_d3
@@ -75,12 +76,12 @@ class DebriefGui(BaseWorld):
                           if str(o.id) in data.get('operations')]
             filename = 'debrief_' + datetime.today().strftime('%Y-%m-%d_%H-%M-%S')
             agents = await self.data_svc.locate('agents')
-            pdf_bytes = self._build_pdf(operations, agents, filename)
+            pdf_bytes = self._build_pdf(operations, agents, filename, data['sections'])
             self._clean_downloads()
             return web.json_response(dict(filename=filename, pdf_bytes=pdf_bytes))
         return web.json_response('No or multiple operations selected')
 
-    def _build_pdf(self, operations, agents, filename):
+    def _build_pdf(self, operations, agents, filename, sections):
         # pdf setup
         pdf_buffer = BytesIO()
         doc = SimpleDocTemplate(pdf_buffer, pagesize=letter,
@@ -108,38 +109,50 @@ class DebriefGui(BaseWorld):
             finish = o.finish if o.finish else 'Not finished'
             data.append([o.name, o.state, o.planner.name, o.objective.name, finish])
         story_obj.append(story_obj.generate_table(data, '*'))
+
         story_obj.append_text('AGENTS', styles['Heading2'], 0)
         story_obj.append_text(story_obj.get_description('agents'), styles['Normal'], 12)
         agent_data = [['Paw', 'Host', 'Platform', 'Username', 'Privilege', 'Executable']]
         for a in agents:
-            agent_data.append([a.paw, a.host, a.platform, a.username, a.privilege, a.exe_name])
+            agent_data.append(['<a name="agent-{0}"/>{0}'.format(a.paw), a.host, a.platform, a.username, a.privilege,
+                               a.exe_name])
         story_obj.append(story_obj.generate_table(agent_data, '*'))
         story_obj.page_break()
 
-        story_obj.append_text('OPERATIONS GRAPHS', styles['Heading2'], 0)
-        graph_files = dict()
-        for file in glob.glob('./plugins/debrief/downloads/*.svg'):
-            graph_files[os.path.basename(file).split('.')[0]] = file
-        story_obj.append_graph('graph', graph_files['graph'])
-        story_obj.append_graph('tactic', graph_files['tactic'])
-        story_obj.append_graph('technique', graph_files['technique'])
-        story_obj.append_graph('fact', graph_files['fact'])
-        story_obj.page_break()
+        if any(v for k, v in sections.items() if '-graph' in k):
+            story_obj.append_text('OPERATIONS GRAPHS', styles['Heading2'], 0)
+            graph_files = dict()
+            for file in glob.glob('./plugins/debrief/downloads/*.svg'):
+                graph_files[os.path.basename(file).split('.')[0]] = file
+            if sections['default-graph']:
+                story_obj.append_graph('graph', graph_files['graph'])
+            if sections['attackpath-graph']:
+                story_obj.append_graph('attack path', graph_files['attackpath'])
+            if sections['tactic-graph']:
+                story_obj.append_graph('tactic', graph_files['tactic'])
+            if sections['technique-graph']:
+                story_obj.append_graph('technique', graph_files['technique'])
+            if sections['fact-graph']:
+                story_obj.append_graph('fact', graph_files['fact'])
+            story_obj.page_break()
 
-        story_obj.append_text('TACTICS AND TECHNIQUES', styles['Heading2'], 0)
-        ttps = self._generate_ttps(operations)
-        story_obj.append(story_obj.generate_ttps(ttps))
+        if sections['tactic-technique-table']:
+            story_obj.append_text('TACTICS AND TECHNIQUES', styles['Heading2'], 0)
+            ttps = self._generate_ttps(operations)
+            story_obj.append(story_obj.generate_ttps(ttps))
 
         for o in operations:
-            story_obj.append_text('STEPS IN OPERATION <font name=Courier-Bold size=17>%s</font>' % o.name.upper(),
-                                  styles['Heading2'], 0)
-            story_obj.append_text(story_obj.get_description('op steps'), styles['Normal'], 12)
-            story_obj.append(story_obj.generate_op_steps(o))
-            story_obj.append_text('FACTS FOUND IN OPERATION <font name=Courier-Bold size=17>%s</font>' % o.name.upper(),
-                                  styles['Heading2'], 0)
-            story_obj.append_text(story_obj.get_description('op facts'), styles['Normal'], 12)
-            story_obj.append(story_obj.generate_facts_found(o))
-            story_obj.page_break()
+            if sections['steps-table']:
+                story_obj.append_text('STEPS IN OPERATION <font name=Courier-Bold size=17>%s</font>' % o.name.upper(),
+                                      styles['Heading2'], 0)
+                story_obj.append_text(story_obj.get_description('op steps'), styles['Normal'], 12)
+                story_obj.append(story_obj.generate_op_steps(o))
+            if sections['facts-table']:
+                story_obj.append_text('FACTS FOUND IN OPERATION <font name=Courier-Bold size=17>%s</font>' % o.name.upper(),
+                                      styles['Heading2'], 0)
+                story_obj.append_text(story_obj.get_description('op facts'), styles['Normal'], 12)
+                story_obj.append(story_obj.generate_facts_found(o))
+                story_obj.page_break()
 
         # pdf teardown
         doc.build(story_obj.story_arr,
